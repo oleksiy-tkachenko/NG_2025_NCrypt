@@ -58,6 +58,9 @@ compile_commands.json
 *.pem
 *.crt
 
+# resource
+*.qrc
+
 # folders
 NCryptServer/Qt-Secret/
 NCryptClient/Qt-Secret/
