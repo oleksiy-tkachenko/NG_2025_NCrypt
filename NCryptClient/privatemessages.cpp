@@ -36,7 +36,7 @@ PrivateMessages::PrivateMessages(QWidget *parent, const QString &recipientNickna
             break;
         }
 
-        ui->conversationInfo->setText("This conversation uses AES+RSA encryption, with AES key size " + QString::number(8*(2+(int)keySize)) + " and AES mode " + mode);
+        ui->conversationInfo->setText("This conversation uses AES+RSA encryption, with AES key size " + QString::number(64*(2+(int)keySize)) + " and AES mode " + mode);
     } else {
         ui->conversationInfo->setText("This conversation uses !!!only RSA!!! encryption, with RSA key size 2048");
     }

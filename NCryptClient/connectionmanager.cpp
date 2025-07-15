@@ -446,12 +446,12 @@ void ConnectionManager::deleteConversation(const QByteArray &uuid)
 void ConnectionManager::processConversationCreation(const QJsonObject &responseJSON)
 {
     QJsonObject request;
+    m_currentConversationUUID = QByteArray::fromBase64(responseJSON["conversation_uuid"].toString().toUtf8());
     if( m_currentEncryptionType == EncryptionType::AESRSA){
         QRSAEncryption encryptor;
         QByteArray aesKey = generateRandomBytes(8*(2+(int)m_currentAESSize));
         m_currentEncryptionKey = aesKey;
         m_currentDecryptionKey = aesKey;
-        m_currentConversationUUID = QByteArray::fromBase64(responseJSON["conversation_uuid"].toString().toUtf8());
         QByteArray recipientPublicKey = QByteArray::fromBase64(responseJSON["public_key"].toString().toUtf8());
         QByteArray encryptedRecipientAesKey = encryptor.encode(aesKey, recipientPublicKey);
         QByteArray encryptedSenderAesKey = encryptor.encode(aesKey, m_publicRSAKey);
@@ -459,7 +459,7 @@ void ConnectionManager::processConversationCreation(const QJsonObject &responseJ
         request["recipient_key"] = QString(encryptedRecipientAesKey.toBase64());
         request["key_size"] = (int)m_currentAESSize;
         request["key_mode"] = (int)m_currentAESMode;
-    } else{
+    } else {
         request["recipient_nickname"] = responseJSON["recipient_nickname"];
     }
     request["request_type"] = "conversation_keys";
@@ -490,8 +490,8 @@ void ConnectionManager::processConversations(const QJsonObject &responseJSON)
             QByteArray keyEncrypted = QByteArray::fromBase64(conversation["key"].toString().toUtf8());
             QRSAEncryption keyDecryptor;
             conversationKey = keyDecryptor.decode(keyEncrypted, m_privateRSAKey);
-            QAESEncryption::Aes aesSize = QAESEncryption::Aes(conversation["key_size"].toInt());
-            QAESEncryption::Mode aesMode = QAESEncryption::Mode(conversation["key_mode"].toInt());
+            aesSize = QAESEncryption::Aes(conversation["key_size"].toInt());
+            aesMode = QAESEncryption::Mode(conversation["key_mode"].toInt());
             if(!lastMessageEncrypted.isEmpty()){
                 QByteArray IV;
                 QByteArray messageWithoutIV;
@@ -505,7 +505,7 @@ void ConnectionManager::processConversations(const QJsonObject &responseJSON)
                 }
                 lastMessage = QAESEncryption::RemovePadding(messageDecryptor.decode(messageWithoutIV, conversationKey, IV));
             }
-        } else if (!encryptionType && !lastMessageEncrypted.isEmpty()){
+        } else if (!encryptionType){
             QRSAEncryption decryptor;
             int maxChunkSize = 190;
             if(lastMessageEncrypted.size() > maxChunkSize){

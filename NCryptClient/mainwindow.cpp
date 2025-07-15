@@ -39,7 +39,6 @@ QMap<QString, QPixmap> MainWindow::nicknamePictureMap;
 
 void MainWindow::onDataRecieved(const QJsonObject &response)
 {
-    qDebug() << "got data";
     QString responseType = response["response_type"].toString();
     if(responseType == "picture"){
         setPicture(response);
