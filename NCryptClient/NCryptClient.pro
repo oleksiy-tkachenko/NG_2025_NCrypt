@@ -11,8 +11,11 @@ CONFIG += c++17
 SOURCES += \
     connectiondialog.cpp \
     connectionmanager.cpp \
+    conversationcard.cpp \
+    defaultscreen.cpp \
     main.cpp \
     mainwindow.cpp \
+    messagecard.cpp \
     privatemessages.cpp \
     registrationdialog.cpp \
     servers.cpp \
@@ -21,7 +24,10 @@ SOURCES += \
 HEADERS += \
     connectiondialog.h \
     connectionmanager.h \
+    conversationcard.h \
+    defaultscreen.h \
     mainwindow.h \
+    messagecard.h \
     privatemessages.h \
     registrationdialog.h \
     servers.h \
@@ -29,7 +35,10 @@ HEADERS += \
 
 FORMS += \
     connectiondialog.ui \
+    conversationcard.ui \
+    defaultscreen.ui \
     mainwindow.ui \
+    messagecard.ui \
     privatemessages.ui \
     registrationdialog.ui \
     servers.ui \

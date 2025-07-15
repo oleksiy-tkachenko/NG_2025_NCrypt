@@ -37,6 +37,16 @@ private:
     void saveProfilePicture(const QJsonObject &requestJSON, QSslSocket *sender);
     void givePicture(const QJsonObject &requestJSON, QSslSocket *sender);
     void setupSsl();
+    bool isSessionTokenCorrect(QByteArray sentSessionToken, User* user);
+    void createConversation(const QJsonObject &requestJSON, QSslSocket *sender);
+    void completeConversation(const QJsonObject &requestJSON, QSslSocket *sender);
+    void giveConversations(const QJsonObject &requestJSON, QSslSocket *sender, bool fetchNew = false);
+    void givePictures(const QJsonObject &requestJSON, QSslSocket *sender);
+    void giveMessages(const QJsonObject &requestJSON, QSslSocket *sender);
+    void processMessage(const QJsonObject &requestJSON, QSslSocket *sender);
+    QJsonObject createConversationJSON(const ConversationInfo &conversation);
+    bool isRecipientOnline(const QString &recipientNickname, QSslSocket *&recipientSocket);
+    void deleteConversation(const QJsonObject &requestJSON, QSslSocket *sender);
 public slots:
     void incomingConnection(qintptr socketDescriptor);
     void slotReadyRead();

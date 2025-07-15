@@ -1,6 +1,7 @@
 #include "server.h"
 #include "qrsaencryption.h"
 
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QRandomGenerator>
@@ -17,12 +18,12 @@ Server::Server()
 
 void Server::setupSsl()
 {
-    QFile keyFile(":/ncrypt.key");
+    QFile keyFile("D:/NG_2025_Oleksii_Tkachenko/NG_2025_NCrypt/ncrypt.key");
     keyFile.open(QIODevice::ReadOnly);
     QSslKey key(&keyFile, QSsl::Rsa, QSsl::Pem, QSsl::PrivateKey);
     keyFile.close();
 
-    QFile certFile(":/ncrypt.crt");
+    QFile certFile("D:/NG_2025_Oleksii_Tkachenko/NG_2025_NCrypt/ncrypt.crt");
     certFile.open(QIODevice::ReadOnly);
     QSslCertificate cert(&certFile, QSsl::Pem);
     certFile.close();
@@ -127,21 +128,272 @@ User* Server::findUserBySocket(QSslSocket *sender)
 void Server::saveProfilePicture(const QJsonObject &requestJSON, QSslSocket *sender)
 {
     User* user = findUserBySocket(sender);
-    QByteArray sentSessionToken = QByteArray::fromBase64(requestJSON["sesssion_token"].toString().toUtf8());
-    if(user == nullptr || user->sessionToken == QByteArray() || user->sessionToken != sentSessionToken){
-        return;
-    }
+    QByteArray sentSessionToken = QByteArray::fromBase64(requestJSON["session_token"].toString().toUtf8());
+    if(!isSessionTokenCorrect(sentSessionToken, user)) return;
     QByteArray pictureData = QByteArray::fromBase64(requestJSON["picture"].toString().toUtf8());
     m_databaseManager.updatePicture(pictureData, user->nickname);
 }
 
+bool Server::isSessionTokenCorrect(QByteArray sentSessionToken, User* user){
+
+    if(user == nullptr || user->sessionToken == QByteArray() || user->sessionToken != sentSessionToken){
+        return false;
+    }
+    return true;
+}
+
+void Server::createConversation(const QJsonObject &requestJSON, QSslSocket *sender)
+{
+    QJsonObject response;
+    response["response_type"] = "conversation_creation";
+    User* user = findUserBySocket(sender);
+    QByteArray sentSessionToken = QByteArray::fromBase64(requestJSON["session_token"].toString().toUtf8());
+    if(!isSessionTokenCorrect(sentSessionToken, user)) return;
+    QString senderNickname = user->nickname;
+    QString recipientNickname = requestJSON["recipient"].toString();
+    if(!m_databaseManager.userExists(recipientNickname)){
+        response["error_msg"] = "No user with this nickname";
+    } else {
+        if(m_databaseManager.conversationExists(senderNickname, recipientNickname)) {
+            response["error_msg"] = "Conversation with this user already exists";
+        } else {
+            QByteArray conversationIdentifier = QUuid::createUuid().toRfc4122();
+            if(!m_databaseManager.createConversation(senderNickname, recipientNickname, conversationIdentifier)) {
+                response["error_msg"] = "Unexpected error with server, try again";
+            } else {
+                QByteArray recipientPublicKey = m_databaseManager.getUserValue(recipientNickname, "public_key");
+                response["conversation_uuid"] = QString(conversationIdentifier.toBase64());
+                response["public_key"] = QString(recipientPublicKey.toBase64());
+                response["recipient_nickname"] = recipientNickname;
+            }
+        }
+    }
+    QJsonDocument document(response);
+    QByteArray jsonData = document.toJson(QJsonDocument::Compact);
+    sender->write(jsonData + "|EoM|");
+}
+
+void Server::completeConversation(const QJsonObject &requestJSON, QSslSocket *sender)
+{
+    User* user = findUserBySocket(sender);
+    QByteArray sentSessionToken = QByteArray::fromBase64(requestJSON["session_token"].toString().toUtf8());
+    if(!isSessionTokenCorrect(sentSessionToken, user)) return;
+    QByteArray conversationUUID = QByteArray::fromBase64(requestJSON["conversation_uuid"].toString().toUtf8());
+    if(!m_databaseManager.conversationExists(conversationUUID)) return;
+    if(!m_databaseManager.senderPresent(user->nickname, conversationUUID)) return;
+    int encryptionType = requestJSON["encryption_type"].toInt();
+    int keySize = 0;
+    int keyMode = 0;
+    QByteArray senderKey;
+    QByteArray recipientKey;
+    QString recipientNickname = requestJSON["recipient_nickname"].toString();
+    if(encryptionType){
+        senderKey = QByteArray::fromBase64(requestJSON["sender_key"].toString().toUtf8());
+        recipientKey = QByteArray::fromBase64(requestJSON["recipient_key"].toString().toUtf8());
+        if (senderKey.isEmpty() || recipientKey.isEmpty()) {
+            m_databaseManager.deleteConversation(conversationUUID);
+            return;
+        }
+        keySize = requestJSON["key_size"].toInt();
+        keyMode = requestJSON["key_mode"].toInt();
+        if(!m_databaseManager.finalizeConversation(senderKey, recipientKey, keySize, keyMode, encryptionType, conversationUUID)) {
+            m_databaseManager.deleteConversation(conversationUUID);
+            return;
+        }
+    } else {
+        recipientKey = m_databaseManager.getUserValue(user->nickname, "public_key");
+        senderKey = m_databaseManager.getUserValue(recipientNickname, "public_key");
+        if(!m_databaseManager.finalizeConversation(senderKey, recipientKey, 0, 0, encryptionType, conversationUUID)) {
+            m_databaseManager.deleteConversation(conversationUUID);
+            return;
+        }
+    }
+    QJsonObject response;
+    response["response_type"] = "conversation_complete";
+    QJsonDocument document(response);
+    QByteArray jsonData = document.toJson(QJsonDocument::Compact);
+    sender->write(jsonData + "|EoM|");
+
+    QSslSocket *recipientSocket;
+    if(isRecipientOnline(recipientNickname, recipientSocket)){
+        QJsonObject responseToRecipient;
+        responseToRecipient["response_type"] = "conversations_changed";
+        QJsonDocument document(responseToRecipient);
+        QByteArray jsonData = document.toJson(QJsonDocument::Compact);
+        recipientSocket->write(jsonData + "|EoM|");
+    }
+}
+
+void Server::giveConversations(const QJsonObject &requestJSON, QSslSocket *sender, bool fetchNew)
+{
+    User* user = findUserBySocket(sender);
+    QByteArray sentSessionToken = QByteArray::fromBase64(requestJSON["session_token"].toString().toUtf8());
+    if(!isSessionTokenCorrect(sentSessionToken, user)) return;
+    QVector<ConversationInfo> conversations;
+    if(!fetchNew){
+        conversations = m_databaseManager.getConversations(user->nickname);
+    } else {
+        qint64 lastConversationsUpdateTime = requestJSON["last_update"].toVariant().toLongLong();
+        conversations = m_databaseManager.getConversations(user->nickname, true, lastConversationsUpdateTime);
+    }
+    if(conversations.empty()) return;
+    QJsonObject response;
+    QJsonArray conversationsJSON;
+    for(const ConversationInfo &conversation : conversations){
+        conversationsJSON.append(createConversationJSON(conversation));
+    }
+    response["response_type"] = "conversations";
+    response["conversations"] = conversationsJSON;
+    QJsonDocument document(response);
+    QByteArray jsonData = document.toJson(QJsonDocument::Compact);
+    sender->write(jsonData + "|EoM|");
+}
+
+QJsonObject Server::createConversationJSON(const ConversationInfo &conversation){
+    QJsonObject conversationJSON;
+    conversationJSON["nickname"] = conversation.nickname;
+    conversationJSON["key"] = QString(conversation.key.toBase64());
+    conversationJSON["uuid"] = QString(conversation.uuid.toBase64());
+    conversationJSON["key_mode"] = conversation.keyMode;
+    conversationJSON["key_size"] = conversation.keySize;
+    conversationJSON["encryption_type"] = conversation.encryptionType;
+    conversationJSON["last_message"] = QString(conversation.lastMessage.toBase64());
+    conversationJSON["last_message_sender"] = conversation.lastMessageSender;
+    conversationJSON["last_message_time"] = conversation.lastMessageTime;
+    return conversationJSON;
+}
+
+void Server::givePictures(const QJsonObject &requestJSON, QSslSocket *sender)
+{
+    User* user = findUserBySocket(sender);
+    QByteArray sentSessionToken = QByteArray::fromBase64(requestJSON["session_token"].toString().toUtf8());
+    if(!isSessionTokenCorrect(sentSessionToken, user)) return;
+    QJsonArray nicknames = requestJSON["nicknames"].toArray();
+    if(nicknames.isEmpty()) return;
+    QJsonObject response;
+    QJsonArray pictures = QJsonArray();
+    for(const QJsonValue &value : nicknames){
+        QString nickname = value.toString();
+        if (nickname.isEmpty() || !m_databaseManager.userExists(nickname)) return;
+        QByteArray pictureData = m_databaseManager.getUserValue(nickname, "picture");
+        QJsonObject pictureWithName;
+        pictureWithName["nickname"] = nickname;
+        pictureWithName["picture"] = QString(pictureData.toBase64());
+        pictures.append(pictureWithName);
+    }
+    response["response_type"] = "pictures";
+    response["pictures"] = pictures;
+    QJsonDocument document(response);
+    QByteArray jsonData = document.toJson(QJsonDocument::Compact);
+    sender->write(jsonData + "|EoM|");
+}
+
+void Server::giveMessages(const QJsonObject &requestJSON, QSslSocket *sender)
+{
+    User* user = findUserBySocket(sender);
+    QByteArray sentSessionToken = QByteArray::fromBase64(requestJSON["session_token"].toString().toUtf8());
+    if(!isSessionTokenCorrect(sentSessionToken, user)) return;;
+    QByteArray uuid = QByteArray::fromBase64(requestJSON["conversation_uuid"].toString().toUtf8());
+    if(!m_databaseManager.senderPresent(user->nickname, uuid)) return;
+    QVector<Message> messages = m_databaseManager.getMessages(uuid);
+    QJsonArray messagesJSON;
+    for(const Message &message : messages){
+        QJsonObject messageJSON;
+        messageJSON["message"] = QString(message.message.toBase64());
+        messageJSON["sender"] = message.sender;
+        messageJSON["timestamp"] = message.timestamp;
+        messagesJSON.append(messageJSON);
+    }
+    QJsonObject response;
+    response["response_type"] = "messages";
+    response["messages"] = messagesJSON;
+    QJsonDocument document(response);
+    QByteArray jsonData = document.toJson(QJsonDocument::Compact);
+    sender->write(jsonData + "|EoM|");
+}
+
+void Server::processMessage(const QJsonObject &requestJSON, QSslSocket *sender)
+{
+    User* user = findUserBySocket(sender);
+    QByteArray sentSessionToken = QByteArray::fromBase64(requestJSON["session_token"].toString().toUtf8());
+    if(!isSessionTokenCorrect(sentSessionToken, user)) return;
+    bool destinationType = requestJSON["destination_type"].toInt();
+    QByteArray destination = QByteArray::fromBase64(requestJSON["destination"].toString().toUtf8());
+    QByteArray message = QByteArray::fromBase64(requestJSON["message"].toString().toUtf8());
+    if(message.isEmpty()) return;
+    QString senderNickname = user->nickname;
+    if(!m_databaseManager.senderPresent(senderNickname, destination)) return;
+    qint64 timestamp = QDateTime::currentSecsSinceEpoch();
+    if(!m_databaseManager.addMessage(message, senderNickname, timestamp, destination, destinationType)) return;
+    if(!destinationType) {
+        m_databaseManager.addLastMessageToConversation(destination, message, senderNickname, timestamp);
+        QString recipientNickname = m_databaseManager.getRecipientNickname(senderNickname, destination);
+        QSslSocket *recipientSocket;
+        if(isRecipientOnline(recipientNickname, recipientSocket)){
+            QJsonObject response;
+            response["response_type"] = "message";
+            response["message"] = QString(message.toBase64());
+            response["conversation_uuid"] = QString(destination.toBase64());
+            response["timestamp"] = timestamp;
+            response["sender_nickname"] = senderNickname;
+            QJsonDocument document(response);
+            QByteArray jsonData = document.toJson(QJsonDocument::Compact);
+            recipientSocket->write(jsonData + "|EoM|");
+
+            response = QJsonObject();
+            response["response_type"] = "conversations_changed";
+            document = QJsonDocument(response);
+            jsonData = document.toJson(QJsonDocument::Compact);
+            recipientSocket->write(jsonData + "|EoM|");
+        }
+    } else {
+        //todo groups
+    }
+}
+
+bool Server::isRecipientOnline(const QString &recipientNickname, QSslSocket *&recipientSocket){
+    bool online = false;
+    for(const User &user : m_users){
+        if(user.nickname == recipientNickname){ // checking if user is online to send message immediately
+            online = true;
+            recipientSocket = user.socket;
+            break;
+        }
+    }
+    return online;
+}
+
+void Server::deleteConversation(const QJsonObject &requestJSON, QSslSocket *sender)
+{
+    User* user = findUserBySocket(sender);
+    QByteArray sentSessionToken = QByteArray::fromBase64(requestJSON["session_token"].toString().toUtf8());
+    if(!isSessionTokenCorrect(sentSessionToken, user)) return;
+    QString senderNickname = user->nickname;
+    QByteArray uuid = QByteArray::fromBase64(requestJSON["conversation_uuid"].toString().toUtf8());
+    if(!m_databaseManager.senderPresent(senderNickname, uuid)) return;
+    QString recipientNickname = m_databaseManager.getRecipientNickname(senderNickname, uuid);
+    m_databaseManager.deleteConversation(uuid);
+    QSslSocket* recipientSocket;
+    if(isRecipientOnline(recipientNickname, recipientSocket)){
+        QJsonObject response;
+        response["response_type"] = "conversation_deleted";
+        response["conversation_uuid"] = requestJSON["conversation_uuid"];
+        QJsonDocument document(response);
+        QByteArray jsonData = document.toJson(QJsonDocument::Compact);
+        recipientSocket->write(jsonData + "|EoM|");
+    }
+}
+
 void Server::givePicture(const QJsonObject &requestJSON, QSslSocket *sender)
 {
+    User* user = findUserBySocket(sender);
+    QByteArray sentSessionToken = QByteArray::fromBase64(requestJSON["session_token"].toString().toUtf8());
+    if(!isSessionTokenCorrect(sentSessionToken, user)) return;
     QString nickname;
     QJsonObject response;
     response["response_type"] = "picture";
     if(!requestJSON.contains("nickname")){
-        nickname = findUserBySocket(sender)->nickname;
+        nickname = user->nickname;
     } else {
         nickname = requestJSON["nickname"].toString();
         response["nickname"] = nickname;
@@ -160,6 +412,7 @@ void Server::incomingConnection(qintptr socketDescriptor)
     if (socket->setSocketDescriptor(socketDescriptor)) {
         addPendingConnection(socket);
         connect(socket, &QSslSocket::encrypted, this, &Server::onEncrypted);
+        qDebug() << "client connected" << socketDescriptor;
         socket->startServerEncryption();
     } else {
         delete socket;
@@ -172,7 +425,7 @@ void Server::onEncrypted()
     connect(socket, &QSslSocket::readyRead, this , &Server::slotReadyRead);
     connect(socket, &QSslSocket::disconnected, this, &Server::onClientDisconnect);
 
-    qDebug() << "client connected" << socket->socketDescriptor();
+    qDebug() << "client encrypted succesfully" << socket->socketDescriptor();
 }
 
 void Server::logInUser(const QJsonObject &requestJSON, QSslSocket *sender)
@@ -186,9 +439,11 @@ void Server::logInUser(const QJsonObject &requestJSON, QSslSocket *sender)
         QByteArray challenge = generateChallenge();
         QByteArray salt = m_databaseManager.getUserValue(nickname, "salt");
         QByteArray privateKey = m_databaseManager.getUserValue(nickname, "private_key");
+        QByteArray publicKey = m_databaseManager.getUserValue(nickname, "public_key");
         responseJSON["challenge"] = QString(challenge.toBase64());
         responseJSON["salt"] = QString(salt.toBase64());
         responseJSON["private_key"] = QString(privateKey.toBase64());
+        responseJSON["public_key"] = QString(publicKey.toBase64());
         m_users.append(User{sender, nickname, QByteArray(), challenge});
     }
     QJsonDocument document(responseJSON);
@@ -216,15 +471,33 @@ void Server::slotReadyRead()
             return;
         }
         QJsonObject requestJSON = JSONDoc.object();
-        if(requestJSON["request_type"] == "log_in"){
+        QString requestType = requestJSON["request_type"].toString();
+        if(requestType == "log_in"){
             if(requestJSON["is_registration"] == "true") registerUser(requestJSON, socket);
             else logInUser(requestJSON, socket);
-        } else if (requestJSON["request_type"] == "challenge") {
+        } else if (requestType == "challenge") {
             checkChallenge(requestJSON, socket);
-        } else if (requestJSON["request_type"] == "picture_change"){
+        } else if (requestType == "picture_change"){
             saveProfilePicture(requestJSON, socket);
-        } else if (requestJSON["request_type"].toString() == "picture"){
             givePicture(requestJSON, socket);
+        } else if (requestType == "picture"){
+            givePicture(requestJSON, socket);
+        } else if (requestType == "create_conversation"){
+            createConversation(requestJSON, socket);
+        } else if (requestType == "conversation_keys"){
+            completeConversation(requestJSON, socket);
+        } else if (requestType == "conversations"){
+            giveConversations(requestJSON, socket);
+        } else if (requestType == "update_conversations") {
+            giveConversations(requestJSON, socket, true);
+        } else if (requestType == "pictures"){
+            givePictures(requestJSON, socket);
+        } else if (requestType == "messages"){
+            giveMessages(requestJSON, socket);
+        } else if (requestType == "message"){
+            processMessage(requestJSON, socket);
+        } else if (requestType == "delete_conversation"){
+            deleteConversation(requestJSON, socket);
         }
     }
 }

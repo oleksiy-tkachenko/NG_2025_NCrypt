@@ -14,7 +14,7 @@
    <string>MainWindow</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <layout class="QHBoxLayout" name="horizontalLayout_2" stretch="2,5">
+   <layout class="QHBoxLayout" name="horizontalLayout_2" stretch="3,5">
     <item>
      <layout class="QVBoxLayout" name="verticalLayout_2" stretch="1,7">
       <property name="spacing">
@@ -29,7 +29,7 @@
          <number>0</number>
         </property>
         <item>
-         <widget class="QFrame" name="frame">
+         <widget class="QFrame" name="userCard">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
             <horstretch>0</horstretch>
@@ -47,13 +47,14 @@
             <rect>
              <x>80</x>
              <y>0</y>
-             <width>101</width>
+             <width>201</width>
              <height>61</height>
             </rect>
            </property>
            <property name="font">
             <font>
              <pointsize>11</pointsize>
+             <bold>true</bold>
             </font>
            </property>
            <property name="text">
@@ -98,7 +99,7 @@
             <rect>
              <x>0</x>
              <y>0</y>
-             <width>69</width>
+             <width>92</width>
              <height>461</height>
             </rect>
            </property>
@@ -106,13 +107,85 @@
          </widget>
         </item>
         <item>
-         <widget class="QWidget" name="widget_2" native="true">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
-          </property>
+         <widget class="QStackedWidget" name="sideBarWidgets">
+          <widget class="QWidget" name="privateMessagesPage">
+           <layout class="QVBoxLayout" name="verticalLayout_3">
+            <property name="spacing">
+             <number>6</number>
+            </property>
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="QScrollArea" name="scrollArea_2">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="layoutDirection">
+               <enum>Qt::LeftToRight</enum>
+              </property>
+              <property name="horizontalScrollBarPolicy">
+               <enum>Qt::ScrollBarAlwaysOff</enum>
+              </property>
+              <property name="sizeAdjustPolicy">
+               <enum>QAbstractScrollArea::AdjustToContents</enum>
+              </property>
+              <property name="widgetResizable">
+               <bool>true</bool>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
+              </property>
+              <widget class="QWidget" name="scrollAreaWidgetContents_2">
+               <property name="geometry">
+                <rect>
+                 <x>0</x>
+                 <y>0</y>
+                 <width>185</width>
+                 <height>461</height>
+                </rect>
+               </property>
+               <property name="autoFillBackground">
+                <bool>true</bool>
+               </property>
+               <layout class="QVBoxLayout" name="verticalLayout_4">
+                <property name="leftMargin">
+                 <number>0</number>
+                </property>
+                <property name="topMargin">
+                 <number>0</number>
+                </property>
+                <property name="rightMargin">
+                 <number>0</number>
+                </property>
+                <property name="bottomMargin">
+                 <number>0</number>
+                </property>
+                <item>
+                 <layout class="QVBoxLayout" name="conversationCardsContainer">
+                  <property name="sizeConstraint">
+                   <enum>QLayout::SetDefaultConstraint</enum>
+                  </property>
+                 </layout>
+                </item>
+               </layout>
+              </widget>
+             </widget>
+            </item>
+           </layout>
+          </widget>
          </widget>
         </item>
        </layout>
@@ -120,7 +193,7 @@
      </layout>
     </item>
     <item>
-     <widget class="QWidget" name="widget" native="true"/>
+     <widget class="QStackedWidget" name="mainWidgets"/>
     </item>
    </layout>
   </widget>

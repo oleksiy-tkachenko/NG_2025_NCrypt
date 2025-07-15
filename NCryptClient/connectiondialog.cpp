@@ -3,15 +3,14 @@
 
 #include <ConnectionManager.h>
 
-const QString hostIP = "localhost";
-const int hostPort = 8080;
+
 
 ConnectionDialog::ConnectionDialog(QWidget *parent)
     : QDialog(parent)
     , ui(new Ui::ConnectionDialog)
 {
     ui->setupUi(this);
-
+    ConnectionManager::instance();
     m_closingTimer = new QTimer(this); // to read the connection message
     m_closingTimer->setSingleShot(true);
     m_reconnectionTimer = new QTimer(this);
@@ -23,7 +22,7 @@ ConnectionDialog::ConnectionDialog(QWidget *parent)
 
     connect(ConnectionManager::instance(), &ConnectionManager::connectionTimeout, this, &ConnectionDialog::onTimeout);
     connect(ConnectionManager::instance(), &ConnectionManager::connected, this, &ConnectionDialog::onConnected);
-    ConnectionManager::instance()->connectToServer(hostIP, hostPort);
+
 
 
 }
@@ -46,7 +45,7 @@ void ConnectionDialog::onTimeout(){
 }
 
 void ConnectionDialog::onReconnect(){
-    ConnectionManager::instance()->connectToServer(hostIP, hostPort);
+    ConnectionManager::instance()->connectToServer();
     ui->connectionLabel->setText("Connecting...");
 }
 

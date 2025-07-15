@@ -28,6 +28,8 @@ void RegistrationDialog::onServerResponse(const QJsonObject &response)
 {
     if(response.contains("log_in_error_msg")){
         changeErrorLable(response["log_in_error_msg"].toString());
+        ui->confirmLogInBtn->setDisabled(false);
+        ui->confirmRegistrationBtn->setDisabled(false);
         return;
     }
     if(response.contains("session_token")) {
@@ -75,6 +77,7 @@ void RegistrationDialog::onRegister()
         ui->registrationPassLE->clear();
         ui->registrationPassConfirmLE->clear();
     }
+    ui->confirmRegistrationBtn->setDisabled(true);
     ConnectionManager::instance()->sendLogInRequest(nickname, password, true);
 }
 
@@ -82,5 +85,6 @@ void RegistrationDialog::onLogIn()
 {
     QString nickname = ui->logInNickLE->text();
     QString password = ui->logInPassLE->text();
+    ui->confirmLogInBtn->setDisabled(true);
     ConnectionManager::instance()->sendLogInRequest(nickname, password, false);
 }

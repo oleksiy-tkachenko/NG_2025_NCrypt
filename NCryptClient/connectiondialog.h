@@ -21,6 +21,7 @@ public slots:
     void onReconnect();
     void onCancel();
 private:
+
     Ui::ConnectionDialog *ui;
     uint64_t m_reconnectionInterval = 2000; // 2 seconds
     QTimer *m_closingTimer;
